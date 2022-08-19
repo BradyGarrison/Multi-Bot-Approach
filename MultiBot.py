@@ -269,6 +269,7 @@ class MultiBot(Player):
         #return list(board.pseudo_legal_moves)
     
     def handle_game_start(self, color: Color, board: chess.Board, opponent_name: str):
+        self.board = board
         self.belief_state.append(Belief(board,1))
         self.board_set.append(board)
         self.color = color
@@ -277,6 +278,11 @@ class MultiBot(Player):
         
        
     def handle_opponent_move_result(self, captured_my_piece: bool, capture_square: Optional[Square]):
+        # if the opponent captured our piece, remove it from our board.
+        self.my_piece_captured_square = capture_square
+        if captured_my_piece:
+            self.board.remove_piece_at(capture_square)
+        
         self.MHT_handle_opponent_move_result(captured_my_piece, capture_square)
         self.BSMCTS_handle_opponent_move_result(captured_my_piece, capture_square)
         
@@ -294,6 +300,11 @@ class MultiBot(Player):
             self.first_turn = False
         
         else:
+            
+            # add the pieces in the sense result to our board
+            for square, piece in sense_result:
+                self.board.set_piece_at(square, piece)
+            
             self.MHT_handle_sense_result(sense_result)
             self.BSMCTS_handle_sense_result(sense_result)
             
@@ -302,24 +313,48 @@ class MultiBot(Player):
         
     def choose_move(self, move_actions: List[chess.Move], seconds_left: float) -> Optional[chess.Move]:
         
-        if len(self.board_set) < 30:
-            print("MHT MOVE")
-            return self.MHT_choose_move(move_actions, seconds_left)
+        MHT_move = self.MHT_choose_move(move_actions, seconds_left)
+        print("MHT: " + str(MHT_move))
             
-        elif len(self.board_set) < 100:
-            print("ISMCTS MOVE")
-            return self.ISMCTS_choose_move(move_actions, seconds_left)
+        ISMCTS_move = self.ISMCTS_choose_move(move_actions, seconds_left)
+        print("ISMCTS: " + str(ISMCTS_move))
             
-        else:
-            print("BSMCTS MOVE")
-            return self.BSMCTS_choose_move(move_actions, seconds_left)
+        BSMCTS_move = self.BSMCTS_choose_move(move_actions, seconds_left)
+        print("BSMCTS: " + str(BSMCTS_move))
+        
+        self.board.turn = self.color
+        self.board.clear_stack()
+        
+        move_list = [MHT_move, ISMCTS_move, BSMCTS_move]
+        move_dict = {}
+        
+        for move in move_list:
+            new_board = self.board.copy()
+            new_board.push(move)
+            move_dict[move] = self.evaluate_board(new_board, new_board.turn)
+            
+        keys = list(move_dict.keys())
+        values = list(move_dict.values())
+        
+        selected_move = keys[np.argmax(values)]
+        print("selected move: " + str(selected_move))
+        
+        return selected_move
+            
         
 
     def handle_move_result(self, requested_move: Optional[chess.Move], taken_move: Optional[chess.Move],
                            captured_opponent_piece: bool, capture_square: Optional[Square]):
         
+        
+        
         self.MHT_handle_move_result(requested_move, taken_move, captured_opponent_piece, capture_square)
         self.BSMCTS_handle_move_result(requested_move, taken_move, captured_opponent_piece, capture_square)
+        
+        # if a move was executed, apply it to our board
+        if taken_move is not None:
+            self.board.push(taken_move)
+            #print(self.board)
         
         
 
